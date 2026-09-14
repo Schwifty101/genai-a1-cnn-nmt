@@ -29,7 +29,10 @@ def test_masked_loss_changes_when_unmasked_content_changes():
     target = torch.tensor([[4, 4, 4]])
     mask = torch.tensor([[True, True, False]])
     a = masked_loss(logits, target, mask)
-    logits[0, 0] += 5.0
+    # Perturb ONE class logit, not the whole vector: softmax cross-entropy is
+    # invariant to a uniform shift across classes, so `logits[0, 0] += 5.0`
+    # would provably never change the loss.
+    logits[0, 0, 0] += 5.0
     b = masked_loss(logits, target, mask)
     assert not torch.allclose(a, b)
 
