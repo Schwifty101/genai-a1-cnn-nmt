@@ -68,7 +68,9 @@ genai-a1/
 **Pipeline, in order:**
 
 1. **Integrity** — `PIL.Image.verify()` then reopen and load. Corrupt or truncated files are dropped and counted.
-2. **Duplicates** — exact MD5 first, then perceptual dHash with Hamming distance <= 3. Both counts reported. Dedup runs **before** splitting, which is what makes the leakage guarantee real.
+2. **Duplicates** — exact MD5 first, then a near-duplicate pass. Both counts reported. Dedup runs **before** splitting, which is what makes the leakage guarantee real.
+
+   The near-duplicate rule is **contrast-normalized 32x32 thumbnail correlation >= 0.99**, not perceptual-hash Hamming distance. This was changed after measurement, and the measurement belongs in the report: across this dataset the *median* nearest-neighbour correlation is 0.926, because every chest radiograph shares the same gross anatomy and framing. A dHash-8 rule at Hamming <= 3 therefore flagged 1,570 images (25% of the data) as near-duplicates, of which a 40-pair audit found **zero** genuinely near-identical pairs, an average flagged-pair correlation of 0.842 against a random-pair baseline of 0.605, and 10 of 40 merges spanning two different diagnostic classes. The correlation rule at 0.99 sits in the genuine-duplicate tail (p99 = 0.970, p99.5 = 0.987) and removes 14 near-duplicates plus 34 exact duplicates, 0.75% of the dataset. `dhash` is still computed and stored in the manifest as a cheap blocking key and for reporting.
 3. **Channels** — force grayscale, then replicate to 3 channels. Chest X-rays are single-channel; ImageNet backbones require 3; giving the custom CNN the same 3-channel input is what makes "identical conditions" literally true.
 4. **Resize** — 224x224 bilinear for all full runs. Grid-search proxy runs use 128x128 for speed.
 5. **Normalization** — a swept variable: ImageNet mean/std, plain [0,1], or dataset mean/std.
