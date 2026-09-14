@@ -25,6 +25,20 @@ def _write_image(path, color=(120, 120, 120), size=(64, 64), noise=0):
     return path
 
 
+def _grad_image(path, seed=0, tilt=0.0, noise=0.0):
+    """A structured 64x64 image: distinct seeds give genuinely distinct content."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    yy, xx = np.mgrid[0:64, 0:64] / 63.0
+    rng = np.random.default_rng(seed)
+    base = (0.3 + 0.4 * xx + 0.3 * np.sin(6.283 * (yy + tilt)) * (1 + 0.5 * rng.random()))
+    if noise:
+        base = base + rng.normal(0, noise, base.shape)
+    arr = np.clip(base, 0, 1)
+    arr = (arr * 255).astype(np.uint8)
+    Image.fromarray(np.stack([arr] * 3, axis=-1)).save(path)
+    return path
+
+
 def test_class_names_are_canonical_and_sorted():
     assert CLASS_NAMES == ["COVID19", "NORMAL", "PNEUMONIA"]
     assert CLASS_NAMES == sorted(CLASS_NAMES)
@@ -80,14 +94,13 @@ def test_scan_images_walks_class_dirs_and_reports_corrupt(tmp_path):
 
 
 def test_deduplicate_removes_exact_duplicates(tmp_path):
-    paths = [
-        _write_image(tmp_path / "one.png", color=(30, 30, 30)),
-        _write_image(tmp_path / "two.png", color=(30, 30, 30)),
-        _write_image(tmp_path / "three.png", color=(220, 220, 220)),
-    ]
+    one = _grad_image(tmp_path / "one.png", seed=1, tilt=0.0)
+    two = tmp_path / "two.png"
+    two.write_bytes(one.read_bytes())
+    three = _grad_image(tmp_path / "three.png", seed=9, tilt=0.5)
     df = pd.DataFrame(
         {
-            "path": [str(p) for p in paths],
+            "path": [str(one), str(two), str(three)],
             "label": ["NORMAL"] * 3,
             "label_idx": [1] * 3,
         }
@@ -100,9 +113,9 @@ def test_deduplicate_removes_exact_duplicates(tmp_path):
 
 
 def test_deduplicate_removes_near_duplicates(tmp_path):
-    base = _write_image(tmp_path / "base.png", color=(90, 90, 90), noise=0)
-    near = _write_image(tmp_path / "near.png", color=(91, 91, 91), noise=0)
-    far = _write_image(tmp_path / "far.png", color=(10, 200, 10), noise=60)
+    base = _grad_image(tmp_path / "base.png", seed=3)
+    near = _grad_image(tmp_path / "near.png", seed=3, noise=0.004)
+    far = _grad_image(tmp_path / "far.png", seed=11, tilt=0.37)
     df = pd.DataFrame(
         {
             "path": [str(base), str(near), str(far)],
@@ -110,15 +123,17 @@ def test_deduplicate_removes_near_duplicates(tmp_path):
             "label_idx": [1] * 3,
         }
     )
-    out, report = deduplicate(df, hamming_threshold=3)
-    assert report["near_duplicates"] >= 1
-    assert len(out) < 3
+    out, report = deduplicate(df)
+    assert report["near_duplicates"] == 1
+    survivors = set(out["path"].tolist())
+    assert str(far) in survivors
+    assert survivors == {str(far), str(base)} or survivors == {str(far), str(near)}
 
 
 def test_deduplicate_is_order_independent(tmp_path):
     paths = [
-        _write_image(tmp_path / "b.png", color=(40, 40, 40)),
-        _write_image(tmp_path / "a.png", color=(40, 40, 40)),
+        _grad_image(tmp_path / "b.png", seed=7, tilt=0.15),
+        _grad_image(tmp_path / "a.png", seed=7, tilt=0.15),
     ]
     df = pd.DataFrame(
         {"path": [str(p) for p in paths], "label": ["NORMAL"] * 2, "label_idx": [1] * 2}
@@ -126,6 +141,23 @@ def test_deduplicate_is_order_independent(tmp_path):
     out1, _ = deduplicate(df)
     out2, _ = deduplicate(df.iloc[::-1].reset_index(drop=True))
     assert out1["path"].tolist() == out2["path"].tolist()
+
+
+def test_deduplicate_keeps_structurally_different_images(tmp_path):
+    one = _grad_image(tmp_path / "one.png", seed=1, tilt=0.0)
+    two = _grad_image(tmp_path / "two.png", seed=5, tilt=0.2)
+    three = _grad_image(tmp_path / "three.png", seed=9, tilt=0.5)
+    df = pd.DataFrame(
+        {
+            "path": [str(one), str(two), str(three)],
+            "label": ["NORMAL"] * 3,
+            "label_idx": [1] * 3,
+        }
+    )
+    out, report = deduplicate(df)
+    assert report["near_duplicates"] == 0
+    assert report["kept"] == 3
+    assert len(out) == 3
 
 
 def test_perceptual_hash_is_hex_string(tmp_path):

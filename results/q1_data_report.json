@@ -3,13 +3,13 @@
   "corrupt": 0,
   "corrupt_paths": [],
   "exact_duplicates": 34,
-  "near_duplicates": 1570,
-  "kept": 4828,
+  "near_duplicates": 15,
+  "kept": 6383,
   "class_counts": {
-    "COVID19": 551,
-    "NORMAL": 1150,
-    "PNEUMONIA": 3127
+    "COVID19": 560,
+    "NORMAL": 1579,
+    "PNEUMONIA": 4244
   },
   "seed": 42,
-  "hamming_threshold": 3
+  "corr_threshold": 0.99
 }

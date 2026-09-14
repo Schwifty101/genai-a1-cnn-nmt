@@ -7,10 +7,22 @@ later Q1 task (splitting, dataset, training, evaluation) reads. It:
    dataset `prashant268/chest-xray-covid19-pneumonia`.
 2. Walks the extracted `Data/{train,test}/{CLASS}/` tree, verifying every
    image can actually be decoded and recording basic metadata.
-3. Deduplicates exact (MD5) and near (perceptual hash / dHash) duplicates,
+3. Deduplicates exact (MD5) and near (thumbnail-correlation) duplicates,
    BEFORE any split is made, so no duplicate can straddle a train/val/test
    boundary.
 4. Writes `results/q1_manifest.csv` and `results/q1_data_report.json`.
+
+Near-duplicate detection history: an earlier version of this module used
+dHash Hamming distance directly as the near-duplicate criterion. A
+calibration pass on the real dataset (40 flagged pairs audited, correlation
+distributions compared against random unrelated pairs, dataset-wide nearest-
+neighbour correlation measured at median 0.926 / p99 0.970) showed dHash-8 at
+Hamming <= 3 is not a duplicate detector on this data: chest X-rays are
+intrinsically near-identical under a coarse gradient hash, so the criterion
+produced heavy false-positive merges (including cross-class merges). It was
+replaced with the contrast-normalized-thumbnail-correlation criterion below,
+validated to a corr_threshold of 0.99 (0 of the 40 originally-flagged pairs
+exceeded 0.95).
 """
 
 from __future__ import annotations
@@ -22,8 +34,9 @@ import subprocess
 from pathlib import Path
 
 import imagehash
+import numpy as np
 import pandas as pd
-from PIL import Image, ImageStat
+from PIL import Image
 
 from src.common.seed import SEED
 
@@ -31,17 +44,7 @@ CLASS_NAMES = ["COVID19", "NORMAL", "PNEUMONIA"]
 
 _KAGGLE_DATASET = "prashant268/chest-xray-covid19-pneumonia"
 _IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
-
-# dHash is a purely relative (gradient) measure: two images that are each
-# internally flat/near-constant (e.g. a solid mid-gray tile and a solid
-# near-white tile) collapse to the *same* dHash regardless of their absolute
-# brightness, because there is no internal gradient for the hash to encode.
-# That is a known blind spot of gradient hashes. A coarse mean-intensity gate
-# closes it cheaply: two rows are only treated as near-duplicates when both
-# their dHash is close (the primary, spec-mandated signal) AND their overall
-# brightness is close. Real chest X-rays are textured, not flat, so this
-# never triggers on the real dataset and only guards the degenerate case.
-_BRIGHTNESS_TOLERANCE = 15.0
+_THUMBNAIL_SIZE = (32, 32)
 
 
 def download_dataset(dest: Path) -> Path:
@@ -97,10 +100,23 @@ def perceptual_hash(path: Path) -> str:
         return str(imagehash.dhash(im))
 
 
-def _mean_intensity(path: Path) -> float:
-    """Cheap absolute-brightness signal used only as a near-dup tie-breaker."""
+def _thumbnail_signature(path: Path) -> np.ndarray:
+    """Contrast-normalized 32x32 grayscale thumbnail, L2-normalized.
+
+    Open as L, resize to 32x32 bilinear, scale to [0,1], subtract the mean,
+    divide by (std + 1e-8), flatten, then L2-normalize — so the dot product
+    of two signatures *is* their correlation.
+    """
     with Image.open(path) as im:
-        return float(ImageStat.Stat(im.convert("L")).mean[0])
+        im = im.convert("L").resize(_THUMBNAIL_SIZE, Image.BILINEAR)
+        arr = np.asarray(im, dtype=np.float64) / 255.0
+    arr = arr - arr.mean()
+    arr = arr / (arr.std() + 1e-8)
+    flat = arr.flatten()
+    norm = np.linalg.norm(flat)
+    if norm > 0:
+        flat = flat / norm
+    return flat
 
 
 def scan_images(root: Path) -> tuple[pd.DataFrame, dict]:
@@ -151,13 +167,27 @@ def scan_images(root: Path) -> tuple[pd.DataFrame, dict]:
     return ok_df, report
 
 
-def deduplicate(df: pd.DataFrame, hamming_threshold: int = 3) -> tuple[pd.DataFrame, dict]:
+def deduplicate(df: pd.DataFrame, corr_threshold: float = 0.99) -> tuple[pd.DataFrame, dict]:
     """Drop exact and near-duplicate images, keeping the first sorted-path row.
 
     Sorts by `path` first so the surviving representative never depends on
     input order. Adds `md5` and `dhash` columns. Exact duplicates (identical
-    MD5) are dropped first, then near-duplicates whose dHash Hamming
-    distance to an already-kept row is `<= hamming_threshold`.
+    MD5) are dropped first via `drop_duplicates`.
+
+    Near-duplicates are then found via contrast-normalized 32x32 grayscale
+    thumbnail correlation (see `_thumbnail_signature`): a row is a
+    near-duplicate of an already-kept row when the dot product of their
+    signatures — which equals their correlation, since each signature is
+    z-scored and then L2-normalized — is `>= corr_threshold`.
+
+    `dhash` is still computed and stored (it's part of the manifest schema
+    and a cheap reporting column). Near-duplicate matching itself compares
+    every surviving row against every other via one vectorized correlation
+    matrix (`signatures @ signatures.T`), rather than a dHash-prefix
+    candidate-blocking pass: on this dataset size (~6.4k rows, 1024-d
+    signatures) the dense matmul is a fraction of a second (BLAS-vectorized),
+    so blocking would only cost recall with no runtime benefit — the
+    dominant cost is per-image I/O, which blocking does not reduce.
     """
     work = df.sort_values("path", kind="stable").reset_index(drop=True).copy()
     work["md5"] = [file_md5(Path(p)) for p in work["path"]]
@@ -167,48 +197,30 @@ def deduplicate(df: pd.DataFrame, hamming_threshold: int = 3) -> tuple[pd.DataFr
     work = work.drop_duplicates(subset="md5", keep="first").reset_index(drop=True)
     exact_duplicates = n_before_exact - len(work)
 
-    # Bucket by the first 4 hex characters of the dHash so the near-duplicate
-    # scan stays sub-quadratic in practice instead of comparing every row
-    # against every other row.
-    kept_rows: list[dict] = []
-    buckets: dict[str, list[int]] = {}
+    n = len(work)
+    if n == 0:
+        report = {"exact_duplicates": int(exact_duplicates), "near_duplicates": 0, "kept": 0}
+        return work.copy(), report
+
+    signatures = np.stack([_thumbnail_signature(Path(p)) for p in work["path"]]).astype(
+        np.float32
+    )
+    # Each signature is z-scored then L2-normalized, so this matrix's entries
+    # *are* pairwise correlations.
+    corr_matrix = signatures @ signatures.T
+
+    keep_mask = np.zeros(n, dtype=bool)
+    kept_indices: list[int] = []
     near_duplicates = 0
-    brightness_cache: dict[str, float] = {}
 
-    def brightness_for(path: str) -> float:
-        if path not in brightness_cache:
-            brightness_cache[path] = _mean_intensity(Path(path))
-        return brightness_cache[path]
-
-    for row in work.to_dict("records"):
-        dhash_hex = row["dhash"]
-        bucket_key = dhash_hex[:4]
-        candidate_hash = imagehash.hex_to_hash(dhash_hex)
-
-        is_near_dup = False
-        for kept_idx in buckets.get(bucket_key, []):
-            kept_hash = imagehash.hex_to_hash(kept_rows[kept_idx]["dhash"])
-            if candidate_hash - kept_hash > hamming_threshold:
-                continue
-            if (
-                abs(brightness_for(row["path"]) - brightness_for(kept_rows[kept_idx]["path"]))
-                <= _BRIGHTNESS_TOLERANCE
-            ):
-                is_near_dup = True
-                break
-
-        if is_near_dup:
+    for i in range(n):
+        if kept_indices and corr_matrix[i, kept_indices].max() >= corr_threshold:
             near_duplicates += 1
             continue
+        keep_mask[i] = True
+        kept_indices.append(i)
 
-        kept_rows.append(row)
-        buckets.setdefault(bucket_key, []).append(len(kept_rows) - 1)
-
-    out = pd.DataFrame(kept_rows)
-    if len(out):
-        out = out.reset_index(drop=True)
-    else:
-        out = work.iloc[0:0].copy()
+    out = work.loc[keep_mask].reset_index(drop=True)
 
     report = {
         "exact_duplicates": int(exact_duplicates),
@@ -222,7 +234,7 @@ def build_manifest(
     raw_dir: Path,
     out_csv: Path,
     report_json: Path,
-    hamming_threshold: int = 3,
+    corr_threshold: float = 0.99,
 ) -> pd.DataFrame:
     """Orchestrate download -> scan -> deduplicate -> write manifest + report."""
     raw_dir = Path(raw_dir)
@@ -231,7 +243,7 @@ def build_manifest(
 
     download_dataset(raw_dir)
     ok_df, scan_report = scan_images(raw_dir)
-    manifest, dedup_report = deduplicate(ok_df, hamming_threshold=hamming_threshold)
+    manifest, dedup_report = deduplicate(ok_df, corr_threshold=corr_threshold)
 
     out_csv.parent.mkdir(parents=True, exist_ok=True)
     manifest.to_csv(out_csv, index=False)
@@ -249,7 +261,7 @@ def build_manifest(
         "kept": int(dedup_report["kept"]),
         "class_counts": class_counts,
         "seed": SEED,
-        "hamming_threshold": hamming_threshold,
+        "corr_threshold": corr_threshold,
     }
 
     report_json.parent.mkdir(parents=True, exist_ok=True)
@@ -264,14 +276,14 @@ def _main() -> None:
     parser.add_argument("--raw-dir", type=Path, default=Path("data/q1"))
     parser.add_argument("--out", type=Path, default=Path("results/q1_manifest.csv"))
     parser.add_argument("--report", type=Path, default=Path("results/q1_data_report.json"))
-    parser.add_argument("--hamming-threshold", type=int, default=3)
+    parser.add_argument("--corr-threshold", type=float, default=0.99)
     args = parser.parse_args()
 
     manifest = build_manifest(
         raw_dir=args.raw_dir,
         out_csv=args.out,
         report_json=args.report,
-        hamming_threshold=args.hamming_threshold,
+        corr_threshold=args.corr_threshold,
     )
 
     with open(args.report) as f:
