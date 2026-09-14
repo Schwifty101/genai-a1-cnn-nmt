@@ -122,8 +122,20 @@ def train_model(
         val_acc = val_metrics["accuracy"]
         val_macro_f1 = val_metrics["macro"]["f1"]
 
+        epoch_values = {
+            "train_loss": train_loss,
+            "val_loss": val_loss,
+            "train_acc": train_acc,
+            "val_acc": val_acc,
+            "val_macro_f1": val_macro_f1,
+        }
+        monitored = epoch_values[cfg.monitor]
+
         if scheduler is not None:
-            scheduler.step()
+            if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                scheduler.step(monitored)
+            else:
+                scheduler.step()
 
         epoch_time = time.time() - start
 
@@ -133,15 +145,6 @@ def train_model(
         history["val_acc"].append(float(val_acc))
         history["val_macro_f1"].append(float(val_macro_f1))
         history["epoch_time_s"].append(float(epoch_time))
-
-        epoch_values = {
-            "train_loss": train_loss,
-            "val_loss": val_loss,
-            "train_acc": train_acc,
-            "val_acc": val_acc,
-            "val_macro_f1": val_macro_f1,
-        }
-        monitored = epoch_values[cfg.monitor]
 
         if best_score is None:
             improved = True

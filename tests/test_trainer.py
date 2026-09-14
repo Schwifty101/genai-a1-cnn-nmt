@@ -142,3 +142,44 @@ def test_l1_penalty_increases_reported_loss():
         CLASSES,
     )
     assert h_b["train_loss"][0] > h_a["train_loss"][0]
+
+
+def test_reduce_lr_on_plateau_scheduler_does_not_crash():
+    train_loader, val_loader = _tiny_problem()
+    model = _model()
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="max", factor=0.5, patience=1
+    )
+    history = train_model(
+        model,
+        train_loader,
+        val_loader,
+        nn.CrossEntropyLoss(),
+        optimizer,
+        pick_device("cpu"),
+        TrainConfig(epochs=4, patience=10),
+        CLASSES,
+        scheduler=scheduler,
+    )
+    assert len(history["train_loss"]) == 4
+
+
+def test_steplr_scheduler_still_steps():
+    train_loader, val_loader = _tiny_problem()
+    model = _model()
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
+    initial_lr = optimizer.param_groups[0]["lr"]
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.5)
+    train_model(
+        model,
+        train_loader,
+        val_loader,
+        nn.CrossEntropyLoss(),
+        optimizer,
+        pick_device("cpu"),
+        TrainConfig(epochs=3, patience=10),
+        CLASSES,
+        scheduler=scheduler,
+    )
+    assert optimizer.param_groups[0]["lr"] < initial_lr
