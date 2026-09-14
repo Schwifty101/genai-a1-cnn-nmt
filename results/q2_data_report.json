@@ -1,0 +1,20 @@
+{
+  "clean": {
+    "raw": 9103,
+    "empty_dropped": 1,
+    "duplicates_dropped": 10,
+    "kept": 9092
+  },
+  "length_filter": {
+    "en_max_len": 37.44999999999891,
+    "ur_max_len": 41.0,
+    "too_long_dropped": 627,
+    "bad_ratio_dropped": 25,
+    "kept": 8440
+  },
+  "kept": 8440,
+  "seed": 42,
+  "strip_diacritics": true,
+  "max_percentile": 95.0,
+  "max_ratio": 2.5
+}

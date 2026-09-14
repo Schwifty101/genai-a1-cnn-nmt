@@ -166,6 +166,39 @@ def save_image_grid(
     plt.close(fig)
 
 
+def plot_length_hist(
+    panels: list[dict],
+    out_path: Path,
+    suptitle: str = "",
+) -> None:
+    """Multi-panel overlaid histogram figure.
+
+    `panels` is a list of `{"title": str, "series": {label: values}}` dicts,
+    one per panel (e.g. one for English token lengths, one for Urdu), each
+    overlaying one histogram per series entry (e.g. before/after filtering).
+    """
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    n = max(1, len(panels))
+    fig, axes = plt.subplots(1, n, figsize=(6 * n, 5))
+    axes = np.atleast_1d(axes)
+
+    for ax, panel in zip(axes, panels):
+        for label, values in panel["series"].items():
+            ax.hist(values, bins=30, alpha=0.5, label=label)
+        ax.set_xlabel("token length")
+        ax.set_ylabel("count")
+        ax.set_title(panel.get("title", ""))
+        ax.legend()
+        ax.grid(True)
+
+    if suptitle:
+        fig.suptitle(suptitle)
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 def plot_xy(
     x: list,
     series: dict[str, list],
