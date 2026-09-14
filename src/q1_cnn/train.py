@@ -145,7 +145,7 @@ def run_training(
     split_df: pd.DataFrame,
     out_dir: Path,
     device=None,
-    root: Path | None = None,
+    root: Path = Path("."),
 ) -> dict:
     """Run one full training + validation cycle and persist its artifacts.
 
@@ -153,17 +153,19 @@ def run_training(
     validation split is ever evaluated here — the test split is left
     untouched for a later task.
 
-    `root` is the directory the manifest's `path` column is relative to. It
-    defaults to `out_dir.parent`, which matches the CLI's own
-    `runs/q1/<run_name>` layout only when explicitly overridden (the CLI
-    passes `root=Path(".")`, the repo root the real manifest paths are
-    relative to); tests that build a self-contained `tmp_path` fixture and
-    write into `tmp_path / "run"` get the correct root for free.
+    `root` is the directory the manifest's `path` column is relative to.
+    It defaults to `Path(".")` — matching `build_loaders`'s own default —
+    i.e. the process's current working directory, which is the repo root
+    for the CLI (and for Task 7's grid search) regardless of how deeply
+    `out_dir` is nested under it. It is deliberately independent of
+    `out_dir`: deriving it from `out_dir` (e.g. `out_dir.parent`) is wrong
+    whenever `out_dir` is nested more than one level deep, as it is for a
+    grid search's `out_root/stage_name/cfg_index/` layout. Callers whose
+    manifest paths are rooted somewhere else (e.g. a test fixture writing
+    images under `tmp_path`) must pass `root` explicitly.
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    if root is None:
-        root = out_dir.parent
     root = Path(root)
 
     set_seed(cfg.seed)

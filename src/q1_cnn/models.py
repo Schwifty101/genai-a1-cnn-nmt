@@ -102,12 +102,59 @@ MODEL_NAMES = [
 ]
 
 
+def _freeze_frozen_batchnorm(model: nn.Module) -> nn.Module:
+    """Keep BatchNorm layers whose parameters are all frozen in eval mode.
+
+    `requires_grad=False` on a BatchNorm's affine parameters blocks
+    gradient updates to them, but it does NOT stop the layer from updating
+    its `running_mean` / `running_var` buffers while the module is in
+    `train()` mode — those buffers are updated unconditionally by the
+    forward pass whenever `training=True`, regardless of `requires_grad`.
+    Left alone, a "frozen" backbone would keep silently adapting its
+    BatchNorm statistics to the chest X-ray distribution every epoch,
+    defeating the point of freezing it (measured drift: up to ~0.15 in a
+    `resnet50_frozen` `bn1.running_mean` after a single forward/backward;
+    see task-6-report.md).
+
+    This wraps `model.train()` so that, on every call the trainer makes
+    (once per epoch, since `train_model` calls `model.train()` at the top
+    of each epoch), any BatchNorm submodule whose parameters are *all*
+    `requires_grad=False` is forced back into eval mode right after the
+    normal `train()` call runs — so it always uses its stored (e.g.
+    ImageNet) running statistics and produces deterministic output. A
+    one-time `.eval()` call on those submodules would not survive the next
+    `model.train()`, which is why the override lives on `train()` itself
+    rather than being applied once at construction time. BatchNorm layers
+    with at least one trainable parameter (e.g. `layer4` in a `_finetune`
+    model) are left alone and train normally.
+    """
+    original_train = model.train
+
+    def train(mode: bool = True):
+        original_train(mode)
+        for m in model.modules():
+            if isinstance(m, nn.modules.batchnorm._BatchNorm):
+                params = list(m.parameters(recurse=False))
+                if params and not any(p.requires_grad for p in params):
+                    m.eval()
+        return model
+
+    model.train = train
+    return model
+
+
 def build_model(name: str, num_classes: int = 3, dropout: float = 0.3) -> nn.Module:
     """Construct one of the five Q1 models by name.
 
     All five consume 3-channel, 224x224 input and use the same
     head-construction convention (a fresh `nn.Sequential` head), so they
-    are trainable under identical conditions.
+    are trainable under identical conditions. Every model returned here
+    has `_freeze_frozen_batchnorm` applied, so any BatchNorm layer whose
+    parameters are entirely frozen stays in eval mode across every
+    `model.train()` call the trainer makes; this changes nothing for
+    `pneumonet` (no frozen BatchNorm parameters) but is what actually
+    makes `*_frozen` mean "frozen" for the BatchNorm-backed ResNet50
+    baselines.
     """
     builders = {
         "pneumonet": lambda: PneumoNet(num_classes=num_classes, dropout=dropout),
@@ -120,7 +167,8 @@ def build_model(name: str, num_classes: int = 3, dropout: float = 0.3) -> nn.Mod
     }
     if name not in builders:
         raise ValueError(f"Unknown model name {name!r}; expected one of {MODEL_NAMES}")
-    return builders[name]()
+    model = builders[name]()
+    return _freeze_frozen_batchnorm(model)
 
 
 def count_parameters(model: nn.Module) -> tuple[int, int]:

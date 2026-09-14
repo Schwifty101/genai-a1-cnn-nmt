@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -59,7 +60,7 @@ def _cfg(**kw):
 def test_run_training_writes_result_json(tmp_path):
     df = _fixture(tmp_path)
     out = tmp_path / "run"
-    result = run_training(_cfg(), df, out, device="cpu")
+    result = run_training(_cfg(), df, out, device="cpu", root=tmp_path)
     assert (out / "result.json").exists()
     saved = json.loads((out / "result.json").read_text())
     assert saved["config"]["model"] == "pneumonet"
@@ -67,7 +68,7 @@ def test_run_training_writes_result_json(tmp_path):
 
 def test_result_has_all_required_keys(tmp_path):
     df = _fixture(tmp_path)
-    result = run_training(_cfg(), df, tmp_path / "run", device="cpu")
+    result = run_training(_cfg(), df, tmp_path / "run", device="cpu", root=tmp_path)
     assert set(result) >= {
         "config",
         "history",
@@ -81,13 +82,15 @@ def test_result_has_all_required_keys(tmp_path):
 
 def test_history_length_matches_epochs(tmp_path):
     df = _fixture(tmp_path)
-    result = run_training(_cfg(epochs=3), df, tmp_path / "run", device="cpu")
+    result = run_training(
+        _cfg(epochs=3), df, tmp_path / "run", device="cpu", root=tmp_path
+    )
     assert len(result["history"]["train_loss"]) == 3
 
 
 def test_val_metrics_include_macro_f1_and_confusion_matrix(tmp_path):
     df = _fixture(tmp_path)
-    result = run_training(_cfg(), df, tmp_path / "run", device="cpu")
+    result = run_training(_cfg(), df, tmp_path / "run", device="cpu", root=tmp_path)
     assert "macro" in result["val_metrics"]
     assert "f1" in result["val_metrics"]["macro"]
     assert len(result["val_metrics"]["confusion_matrix"]) == 3
@@ -96,23 +99,22 @@ def test_val_metrics_include_macro_f1_and_confusion_matrix(tmp_path):
 def test_curves_figure_is_written(tmp_path):
     df = _fixture(tmp_path)
     out = tmp_path / "run"
-    run_training(_cfg(), df, out, device="cpu")
+    run_training(_cfg(), df, out, device="cpu", root=tmp_path)
     assert (out / "curves.png").exists()
 
 
 def test_checkpoint_is_written(tmp_path):
     df = _fixture(tmp_path)
     out = tmp_path / "run"
-    result = run_training(_cfg(), df, out, device="cpu")
-    from pathlib import Path
+    result = run_training(_cfg(), df, out, device="cpu", root=tmp_path)
 
     assert Path(result["ckpt_path"]).exists()
 
 
 def test_same_seed_gives_same_first_epoch_loss(tmp_path):
     df = _fixture(tmp_path)
-    a = run_training(_cfg(), df, tmp_path / "a", device="cpu")
-    b = run_training(_cfg(), df, tmp_path / "b", device="cpu")
+    a = run_training(_cfg(), df, tmp_path / "a", device="cpu", root=tmp_path)
+    b = run_training(_cfg(), df, tmp_path / "b", device="cpu", root=tmp_path)
     assert a["history"]["train_loss"][0] == pytest.approx(
         b["history"]["train_loss"][0], rel=1e-6
     )
@@ -121,8 +123,28 @@ def test_same_seed_gives_same_first_epoch_loss(tmp_path):
 def test_result_json_is_serializable_without_numpy_types(tmp_path):
     df = _fixture(tmp_path)
     out = tmp_path / "run"
-    run_training(_cfg(), df, out, device="cpu")
+    run_training(_cfg(), df, out, device="cpu", root=tmp_path)
     json.loads((out / "result.json").read_text())
+
+
+def test_run_training_resolves_root_correctly_when_out_dir_is_nested(
+    tmp_path, monkeypatch
+):
+    """Regression guard for the `root` default.
+
+    Task 7's grid search calls `run_training` with `out_dir` nested two
+    levels deep (`out_root/stage_name/cfg_index/`) and never passes `root`.
+    `root` must default to the process's current working directory
+    (matching `build_loaders`'s own default), independent of how deeply
+    `out_dir` is nested under it — not to `out_dir.parent`, which would
+    resolve to the wrong directory for anything nested more than one level.
+    """
+    df = _fixture(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    out = Path("stage_a") / "0"
+    result = run_training(_cfg(), df, out, device="cpu")
+    assert (out / "result.json").exists()
+    assert result["val_metrics"]["macro"]["f1"] >= 0.0
 
 
 def test_load_config_applies_overrides(tmp_path):

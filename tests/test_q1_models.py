@@ -90,6 +90,46 @@ def test_build_model_rejects_unknown_name():
         build_model("efficientnet_b7")
 
 
+def test_frozen_resnet_batchnorm_stays_in_eval_after_train_call():
+    model = build_model("resnet50_frozen")
+    model.train()
+    assert model.bn1.training is False
+
+
+def test_frozen_resnet_running_stats_do_not_drift():
+    model = build_model("resnet50_frozen")
+    model.train()
+    before = model.bn1.running_mean.clone()
+
+    optimizer = torch.optim.SGD(
+        [p for p in model.parameters() if p.requires_grad], lr=0.1
+    )
+    x = torch.randn(2, 3, 224, 224)
+    y = torch.tensor([0, 1])
+    out = model(x)
+    loss = nn.functional.cross_entropy(out, y)
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+    assert torch.allclose(model.bn1.running_mean, before)
+
+
+def test_finetuned_resnet_layer4_batchnorm_still_trains():
+    model = build_model("resnet50_finetune")
+    model.train()
+    layer4_bn = next(m for m in model.layer4.modules() if isinstance(m, nn.BatchNorm2d))
+    assert layer4_bn.training is True
+    assert model.bn1.training is False
+
+
+def test_pneumonet_batchnorm_trains_normally():
+    model = build_model("pneumonet")
+    model.train()
+    bn_modules = [m for m in model.modules() if isinstance(m, nn.BatchNorm2d)]
+    assert bn_modules and all(m.training is True for m in bn_modules)
+
+
 def test_layer_table_mentions_shapes_and_params():
     table = layer_table(PneumoNet(), (1, 3, 224, 224))
     assert "Output Shape" in table
