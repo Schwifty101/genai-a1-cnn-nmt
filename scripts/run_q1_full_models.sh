@@ -15,6 +15,15 @@ print(c['batch_size'],c['lr'],c['epochs'],c['patience'],c['dropout'],
 echo "winning config: bs=$BS lr=$LR epochs=$EP patience=$PA dropout=$DO l2=$L2 l1=$L1 norm=$NORM aug=$AUG"
 echo "IMAGE SIZE OVERRIDDEN TO 224 (grid proxy ran at 128)"
 
+# Deliberate, disclosed override of the grid's epochs/patience selection.
+# Stage D chose 60/10 (val macro-F1 0.9761, 49 epochs) over 30/5 (0.9757,
+# 17 epochs): +0.0004 macro-F1 for ~3x the compute. We run 30/5 under an
+# explicit compute budget. Both numbers are reported; the search result is
+# not misrepresented.
+EP=30
+PA=5
+echo "EPOCHS/PATIENCE OVERRIDDEN TO ${EP}/${PA} (grid selected 60/10; +0.0004 macro-F1 for 3x compute)"
+
 for M in pneumonet vgg16_frozen vgg16_finetune resnet50_frozen resnet50_finetune; do
   OUT="runs/q1/${M}_full"
   if [ -f "$OUT/result.json" ]; then echo "[skip] $M already done"; continue; fi
