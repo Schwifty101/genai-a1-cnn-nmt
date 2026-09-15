@@ -1,0 +1,9 @@
+{
+  "best_val_loss": 4.220703668376604,
+  "best_val_ppl": 68.08137414817786,
+  "test_bleu": 2.450126177194151,
+  "n_test": 844,
+  "epochs_run": 32,
+  "params_total": 4770425,
+  "train_seconds": 375.30781412124634
+}

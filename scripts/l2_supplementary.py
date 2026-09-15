@@ -17,7 +17,7 @@ from src.q1_cnn.gridsearch import run_stage
 from src.q1_cnn.train import RunConfig
 
 best = json.loads(Path("results/q1_best_config.json").read_text())
-base = replace(RunConfig(**best), image_size=128, epochs=12)
+base = replace(RunConfig(**best), image_size=128, epochs=12, num_workers=0)
 split_df = pd.read_csv("results/q1_split_manifest.csv")
 
 stage = {"name": "C2_l2_supplementary", "grid": {"l2_lambda": [0.0, 1e-4, 1e-3, 1e-2]}}
