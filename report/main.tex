@@ -11,6 +11,11 @@
 \setlength{\floatsep}{4pt plus 2pt minus 2pt}
 \setlength{\intextsep}{6pt plus 2pt minus 2pt}
 
+% Urdu script for qualitative translation examples. fontspec is used only
+% to declare one extra family; the document body font is untouched.
+\usepackage{fontspec}
+\newfontfamily\urdufont{Noto Nastaliq Urdu}[Script=Arabic]
+
 \begin{document}
 
 \title{Two Studies in Data-Constrained Deep Learning: Chest X-ray Classification and English--Urdu Neural Translation}
@@ -350,20 +355,15 @@ Length-bucketed test BLEU (Table~\ref{tab:q2lengthbucket}, fresh
 samples in \texttt{results/q2\_samples.csv}) is close to flat across
 source lengths, unlike the earlier configurations. Qualitatively, the
 model produces fluent, register-appropriate Urdu at both short and long
-source lengths, but that fluency does not imply faithfulness. For the
-10-token source ``blessed are the meek for they shall inherit the
-earth,'' the reference reads (glossed) ``blessed are those who are
-meek, for they will inherit the earth,'' but the hypothesis glosses to
-``blessed are those who are near to God'' --- correct Beatitude
-register, wrong predicate. For the 30-token source ``and now also the
-axe is laid unto the root of the trees therefore every tree which
-bringeth not forth good fruit is hewn down and cast into the fire,''
-the hypothesis glosses to ``and now I say to you, because of the
-grapes, woe unto you, that none of you should [UNK]'' --- fluent,
-generic Biblical Urdu with no relationship to the source's axe, tree,
-or fire imagery. Both patterns recur throughout
-\texttt{results/q2\_samples.csv}.
+source lengths, but that fluency does not imply faithfulness.
+Table~\ref{tab:q2examples} shows the pattern: the model reproduces
+Biblical register and anchors on individual content words, yet does not
+compose a faithful translation. In the first example the opening clause
+is reproduced exactly before the predicate diverges; in the second a
+single content word survives while the rest of the proposition is lost.
+Both patterns recur throughout \texttt{results/q2\_samples.csv}.
 
+\input{tables/q2_examples.tex}
 \input{tables/q2_lengthbucket.tex}
 
 \section{Error Analysis and Discussion}

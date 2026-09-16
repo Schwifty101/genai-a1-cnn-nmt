@@ -17,8 +17,8 @@ model:
 train:
   batch_size: 64
   lr: 0.001
-  epochs: 40
-  patience: 5
+  epochs: 80
+  patience: 8
   grad_clip: 1.0
   teacher_forcing: 1.0
   num_workers: 0
