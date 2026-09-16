@@ -28,10 +28,21 @@ class TranslationDataset(Dataset):
     an item here is exactly the encoded source/target tokens.
     """
 
-    def __init__(self, df: pd.DataFrame, src_vocab: Vocab, tgt_vocab: Vocab):
+    def __init__(
+        self,
+        df: pd.DataFrame,
+        src_vocab: Vocab,
+        tgt_vocab: Vocab,
+        reverse_source: bool = False,
+    ):
         self.df = df.reset_index(drop=True)
         self.src_vocab = src_vocab
         self.tgt_vocab = tgt_vocab
+        # Sutskever et al. (2014): reversing the source shortens the distance
+        # between the first source words and the first target words, which
+        # measurably helps an RNN encoder-decoder that has no attention. It
+        # changes token order only -- no architectural component is added.
+        self.reverse_source = reverse_source
 
         src_lens = self.df["en"].map(lambda t: len(tokenize(t)))
         tgt_lens = self.df["ur"].map(lambda t: len(tokenize(t)))
@@ -47,6 +58,8 @@ class TranslationDataset(Dataset):
         row = self.df.iloc[idx]
         src_ids = self.src_vocab.encode(tokenize(row["en"]))
         tgt_ids = self.tgt_vocab.encode(tokenize(row["ur"]))
+        if self.reverse_source:
+            src_ids = src_ids[::-1]
         return src_ids, tgt_ids
 
 
@@ -89,15 +102,16 @@ def build_loaders(
     batch_size: int,
     num_workers: int,
     seed: int = SEED,
+    reverse_source: bool = False,
 ) -> tuple[DataLoader, DataLoader, DataLoader]:
     """Partition `split_df` by its `split` column and build train/val/test loaders."""
     train_df = split_df[split_df["split"] == "train"]
     val_df = split_df[split_df["split"] == "val"]
     test_df = split_df[split_df["split"] == "test"]
 
-    train_ds = TranslationDataset(train_df, src_vocab, tgt_vocab)
-    val_ds = TranslationDataset(val_df, src_vocab, tgt_vocab)
-    test_ds = TranslationDataset(test_df, src_vocab, tgt_vocab)
+    train_ds = TranslationDataset(train_df, src_vocab, tgt_vocab, reverse_source)
+    val_ds = TranslationDataset(val_df, src_vocab, tgt_vocab, reverse_source)
+    test_ds = TranslationDataset(test_df, src_vocab, tgt_vocab, reverse_source)
 
     train_loader = DataLoader(
         train_ds,

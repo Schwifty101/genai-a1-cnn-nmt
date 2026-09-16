@@ -162,6 +162,7 @@ def run_training(
         batch_size=cfg["batch_size"],
         num_workers=cfg.get("num_workers", 0),
         seed=seed,
+        reverse_source=bool(cfg.get("reverse_source", False)),
     )
 
     model = Seq2SeqRNN(
@@ -289,6 +290,7 @@ def load_config(path: Path, overrides: dict) -> dict:
         "grad_clip": train_raw.get("grad_clip"),
         "teacher_forcing": train_raw.get("teacher_forcing"),
         "num_workers": train_raw.get("num_workers", 0),
+        "reverse_source": train_raw.get("reverse_source", False),
         "seed": raw.get("seed", SEED),
         "run_name": raw.get("run_name", "run"),
     }

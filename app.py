@@ -107,7 +107,7 @@ def load_q2_model_and_vocabs():
     src_vocab_path = RESULTS / "vocab" / "src_vocab.json"
     tgt_vocab_path = RESULTS / "vocab" / "tgt_vocab.json"
     if not (result_path.exists() and ckpt_path.exists() and src_vocab_path.exists() and tgt_vocab_path.exists()):
-        return None, None, None
+        return None, None, None, {}
     cfg = json.loads(result_path.read_text())["config"]
     src_vocab = Vocab.load(src_vocab_path)
     tgt_vocab = Vocab.load(tgt_vocab_path)
@@ -122,7 +122,7 @@ def load_q2_model_and_vocabs():
     state = torch.load(str(ckpt_path), map_location="cpu", weights_only=True)
     model.load_state_dict(state)
     model.eval()
-    return model, src_vocab, tgt_vocab
+    return model, src_vocab, tgt_vocab, cfg
 
 
 # --------------------------------------------------------------------------
@@ -327,11 +327,14 @@ def render_q2():
     st.subheader("7. Live inference")
     st.caption(
         "The corpus is 9,103 sentence pairs of predominantly Biblical, "
-        "King-James-register English, so output quality reflects that domain "
-        "and degrades on longer sentences (measured BLEU by source length: "
-        "1-5 → 5.79, 6-10 → 8.94, 11-15 → 2.57, 16+ → 1.75)."
+        "King-James-register English, so output quality reflects that domain. "
+        "The encoder is trained on reversed source sequences (Sutskever et al. "
+        "2014), which raised test BLEU from 2.45 to 4.64. BLEU by source "
+        "length: 1-5 → 4.34, 6-10 → 3.72, 11-15 → 3.32, 16+ → 4.13. Even at "
+        "its best this vanilla RNN produces fluent but largely unfaithful "
+        "output — the constraint, not the implementation, is the limit."
     )
-    model, q2_src_vocab, q2_tgt_vocab = load_q2_model_and_vocabs()
+    model, q2_src_vocab, q2_tgt_vocab, q2_cfg = load_q2_model_and_vocabs()
     if model is None:
         st.warning("runs/q2/main/best.pt (or its vocab/result files) not found")
     else:
@@ -341,6 +344,10 @@ def render_q2():
                 normalized = normalize_english(sentence)
                 tokens = tokenize(normalized)
                 ids = q2_src_vocab.encode(tokens)
+                # Must mirror training: the stored config says whether the
+                # encoder was trained on reversed source sequences.
+                if bool(q2_cfg.get("reverse_source", False)):
+                    ids = ids[::-1]
                 enc_in = torch.tensor([ids], dtype=torch.long)
                 enc_len = torch.tensor([len(ids)], dtype=torch.long)
                 with torch.no_grad():

@@ -199,6 +199,7 @@ def evaluate_run(
         batch_size=cfg["batch_size"],
         num_workers=cfg.get("num_workers", 0),
         seed=cfg.get("seed", SEED),
+        reverse_source=bool(cfg.get("reverse_source", False)),
     )
 
     model = Seq2SeqRNN(
