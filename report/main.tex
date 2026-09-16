@@ -1,0 +1,413 @@
+\documentclass[conference]{IEEEtran}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{subcaption}
+\usepackage{caption}
+
+\captionsetup{font=footnotesize}
+\setlength{\textfloatsep}{6pt plus 2pt minus 2pt}
+\setlength{\floatsep}{4pt plus 2pt minus 2pt}
+\setlength{\intextsep}{6pt plus 2pt minus 2pt}
+
+\begin{document}
+
+\title{Two Studies in Data-Constrained Deep Learning: Chest X-ray Classification and English--Urdu Neural Translation}
+
+\author{
+\IEEEauthorblockN{Soban Ahmad}
+\IEEEauthorblockA{FAST National University of Computer and Emerging Sciences\\
+sobanahmad2003@gmail.com}
+}
+
+\maketitle
+
+\begin{abstract}
+We report two independent studies. In Q1, a custom 1.24M-parameter CNN
+(PneumoNet) is trained from scratch to classify chest radiographs into
+COVID-19, Normal, and Pneumonia, and compared against frozen and
+fine-tuned VGG16 and ResNet50 baselines under identical conditions.
+PneumoNet outperforms all four pre-trained baselines on every test metric
+(accuracy 0.9797, macro-F1 0.9794, macro-AUC 0.9982), including
+fine-tuned VGG16 at 108$\times$ the parameter count. In Q2, a vanilla
+RNN encoder--decoder (no attention, no gating) is trained on an
+English--Urdu sentence-pair corpus for neural machine translation,
+achieving BLEU 2.45, with quality collapsing sharply as source-sentence
+length grows. Both studies surface measurement-driven findings that
+contradict default assumptions in the respective pipelines: a
+duplicate-detection threshold imported from natural-image practice
+fails on chest radiographs, horizontal flipping corrupts a laterality
+marker, frozen backbones silently adapt through BatchNorm statistics,
+an L2 regularization sweep is numerically inert at float32 precision,
+and the Q2 corpus is a ninth of the assignment's stated size and
+overwhelmingly Biblical in register.
+\end{abstract}
+
+\section{Introduction}
+
+\subsection{Q1: Chest X-ray Classification}
+Automated triage of chest radiographs into COVID-19, Normal, and
+Pneumonia classes is a natural fit for CNNs, but production pipelines
+default to large ImageNet-pretrained backbones without asking whether a
+small, task-specific network trained from scratch might do as well with
+far fewer parameters and no transfer-learning risk. This study builds
+PneumoNet, a 1,239,779-parameter CNN, and benchmarks it against frozen
+and fine-tuned VGG16 (134.3M params) and ResNet50 (23.5M params) under
+identical data, splits, and training budget. Contributions: a
+calibrated near-duplicate detection procedure for radiographs (Section
+II), a measured augmentation policy rather than an assumed one (Section
+IV), a BatchNorm-freezing correction that changes what "frozen baseline"
+actually means (Section III), and a full grid-search-tuned comparison
+showing the small model wins (Section V).
+
+\subsection{Q2: English--Urdu Neural Machine Translation}
+A vanilla RNN encoder--decoder is the base case against which attention
+and gating are usually justified, but that justification is rarely
+measured directly. This study trains an \texttt{nn.RNN}-only
+encoder--decoder (no LSTM, GRU, attention, or Transformer component) on
+an English--Urdu parallel corpus and evaluates it with BLEU,
+length-bucketed BLEU, and an error taxonomy. Contributions: an audit of
+the actual corpus against the assignment's description (Section II),
+and length-bucketed evidence that a single fixed-size hidden vector,
+not implementation quality, bounds translation quality (Section VI).
+
+\section{Dataset and Preprocessing}
+
+\subsection{Q1}
+The source is the Kaggle \texttt{prashant268/chest-xray-covid19-pneu\-monia}
+dataset: 6,432 images across three classes, all decodable (0 corrupt).
+Near-duplicate detection was recalibrated during development. An
+initial dHash-8/Hamming-distance-$\leq 3$ rule flagged 1,570 of 6,432
+images (25\%) as near-duplicates; a 40-pair audit of the flagged set
+found zero genuinely near-identical pairs, a mean flagged-pair
+correlation of 0.842 against a random-pair baseline of 0.605, and 10 of
+40 flagged pairs spanning two different diagnostic classes. The root
+cause: chest radiographs share gross anatomy and framing, so the
+dataset-wide median nearest-neighbour thumbnail correlation is already
+0.926 (p99 0.970, p99.5 0.987) --- a perceptual-hash threshold
+calibrated on natural images does not transfer to this domain. The rule
+was replaced with contrast-normalized $32\times32$-thumbnail
+correlation $\geq 0.99$, which sits in the genuine-duplicate tail and
+removes 34 exact plus 15 near duplicates, 49 of 6,432 images (0.76\%).
+One of the removed near-duplicate pairs crosses diagnostic classes:
+\texttt{PNEUMONIA(7).jpg} (dropped) and \texttt{COVID19(277).jpg}
+(kept) correlate at 0.9913 --- the same radiograph filed under two
+different diagnoses in the raw data, measured label noise that
+deduplication can silence but not resolve, since which of the two
+original labels was correct is unknowable from the image alone. The
+kept manifest (6,383 images: COVID19
+560, Normal 1{,}579, Pneumonia 4{,}244) is split 80/10/10, stratified by
+class, giving train/val/test = 5{,}106/638/639 images, a 7.6:1
+Pneumonia-to-COVID19 imbalance carried into a weighted loss (Section
+III). Augmentation policy was measured, not assumed: Fig.~\ref{fig:aug}
+shows that horizontal flipping mirrors the radiopaque \texttt{R}
+laterality marker into a mirrored, Cyrillic-``ya''-shaped artifact --- not
+just anatomically questionable for a chest film, but a visible,
+class-irrelevant shortcut cue an augmented model could exploit.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{../results/figs/q1_augmentation.png}
+\caption{Heavy-policy augmentation examples. Rows 3--4 show the R laterality marker mirrored into a Cyrillic-``ya''-shaped artifact under horizontal flip.}
+\label{fig:aug}
+\end{figure}
+
+\subsection{Q2}
+The source is the Kaggle \texttt{muhammadnoman76/translation-dataset}
+English--Urdu spreadsheet. The assignment describes a corpus of
+approximately 24,000 general parallel sentence pairs; the file actually
+delivered contains \textbf{9,103} pairs in a single sheet. Word-level
+auditing of the raw English side shows the corpus is overwhelmingly
+Biblical text in King James register: ``unto'' appears in 22.7\% of
+sentences, ``god'' 13.1\%, ``shall'' 11.0\%, ``jesus'' 10.4\%,
+``thou''/``thee''/``thy'' in 6.8\%/4.3\%/3.4\%, over 6,561 unique
+English word types across 187,640 tokens --- extremely repetitive, with
+a small modern-conversational tail late in the file. Preprocessing
+NFC-normalizes and lowercases English, folds Arabic-form Urdu
+characters to Urdu forms (deliberately excluding alef-with-madda, a
+distinct Urdu letter, from that folding), strips diacritics, and
+separates punctuation into its own tokens. Cleaning drops 1 empty and 10 exact-duplicate
+pairs (9,092 kept), and a length filter (95th-percentile per-side token
+cap, max length ratio 2.5) removes a further 627 long and 25
+skewed-ratio pairs, leaving 8,440 pairs split 80/10/10
+(6,752/844/844, unstratified --- no labels to stratify on).
+Word-level vocabularies (min. frequency 2) give 3,656 source and 3,961
+target types, with validation OOV rates of 3.18\% (English) and 3.50\%
+(Urdu).
+
+\section{Methodology}
+
+\subsection{Q1}
+PneumoNet (Table~\ref{tab:pneumonet}, 1,239,779 params) is four
+convolutional blocks doubling channels $32\to64\to128\to256$, each
+block two Conv-BatchNorm-ReLU \cite{ioffe2015batchnorm} pairs followed
+by max-pooling, then global average pooling and a dropout-regularized
+two-layer classifier head.
+
+\input{tables/q1_pneumonet_layers.tex}
+
+The four baselines are ImageNet-pretrained VGG16 \cite{simonyan2015vgg}
+and ResNet50 \cite{he2016resnet}, each run frozen (only a new head
+trained) and fine-tuned (VGG16: last convolutional block unfrozen;
+ResNet50: \texttt{layer4} unfrozen), so ten total configurations
+reduce to the five reported after selecting one setting per
+architecture pairing shown in Table~\ref{tab:q1comparison}. A
+correction was required for the frozen baselines:
+\texttt{requires\_grad=False} blocks gradient updates to BatchNorm
+affine parameters but does not stop BatchNorm from updating its
+\texttt{running\_mean}/\texttt{running\_var} buffers in \texttt{train()}
+mode, since that update is unconditional on \texttt{requires\_grad}. On
+\texttt{resnet50\_frozen}, one measured forward/backward/optimizer step
+moved \texttt{bn1.running\_mean} by 0.1565 before the fix and exactly
+0.0 after forcing frozen BatchNorm modules to stay in \texttt{eval()}
+mode across every \texttt{train()} call. Without this fix, "frozen"
+baselines would have silently adapted their BatchNorm statistics to the
+chest X-ray domain every epoch, inflating their scores and
+understating the frozen-vs-fine-tuned gap Section V reports.
+
+\subsection{Q2}
+The encoder--decoder \cite{sutskever2014seq2seq}
+(Table~\ref{tab:q2seq2seqlayers}, 4,770,425 params) uses
+\texttt{nn.RNN} with tanh nonlinearity exclusively --- no LSTM, GRU,
+attention module, or Transformer component anywhere in the model, a
+hard constraint of the study rather than a design preference, so that
+Section VI can characterize what a single fixed-size hidden vector can
+and cannot carry.
+
+\input{tables/q2_seq2seq_layers.tex}
+
+The encoder packs its embedded input with
+\texttt{pack\_padded\_sequence} (\texttt{enforce\_sorted=False}) before
+the recurrence so PAD steps never contaminate the final hidden state
+handed to the decoder. Decoder inputs and targets are built under an
+explicit shifting contract: for target tokens $[w_1, w_2]$,
+$\texttt{dec\_in} = [\texttt{SOS}, w_1, w_2, \texttt{PAD}\ldots]$ and
+$\texttt{dec\_target} = [w_1, w_2, \texttt{EOS}, \texttt{PAD}\ldots]$,
+with a masked cross-entropy loss (Section IV) ignoring PAD positions on
+the target side.
+
+\section{Experimental Setup}
+
+\subsection{Q1}
+All models train with AdamW \cite{loshchilov2019adamw}, a
+class-weighted loss (inverse label frequency) for the 7.6:1 imbalance,
+and early stopping on validation macro-F1. Hyperparameters were
+selected by staged coordinate descent over 30 proxy configurations at
+$128\times128$ resolution (stages A: augmentation$\times$normalization,
+B: batch size$\times$lr, C1--C3: dropout, L2, L1, D:
+epochs$\times$patience), not an exhaustive Cartesian product --- a full
+grid over these axes would run into days of MPS wall time, which the
+project's compute budget did not allow. Table~\ref{tab:q1hyper} reports
+the searched range and selected value for every axis.
+
+\input{tables/q1_hyperparams.tex}
+
+Two results are reported honestly rather than smoothed over. First, augmentation: stage A shows augmentation monotonically
+\emph{hurting} validation macro-F1 across all three normalization
+schemes without exception (none $>$ light $>$ heavy; best
+none+imagenet 0.9745, worst heavy+dataset 0.9508), consistent with
+Section II's finding that this dataset is clean, consistently framed,
+and harmed rather than helped by geometric invariance training.
+Second, L2 weight decay: the searched range
+$\{0, 10^{-5}, 10^{-4}\}$ returned bit-identical validation macro-F1
+(0.9756799123668505) for all three values in stage C2. This is not a
+discreteness artifact of the metric; an isolated 200-step AdamW
+experiment at the same learning rate reproduces it directly ---
+$\lambda\in\{0, 10^{-5}, 10^{-4}\}$ give identical loss and weights,
+while $\lambda=10^{-2}$ differs. AdamW's decoupled update
+$p \leftarrow p - \eta\lambda p$ at $\eta=10^{-4}$, $\lambda=10^{-4}$
+is a relative per-step change of $10^{-8}$, below float32 epsilon
+($\approx 1.19\times10^{-7}$), so it rounds to exactly no change: the
+searched range was below representable precision, a trap for any
+small-weight-decay/small-learning-rate float32 experiment. The searched
+range and optimal value ($\lambda=0$) are reported as-is in
+Table~\ref{tab:q1hyper}. The search's own top selection for
+epochs/patience was 60/10 (validation macro-F1 0.9761, 49 epochs run),
+narrowly ahead of 30/5 (0.9757, 17 epochs) --- a gain of 0.0004 for
+roughly 3$\times$ the compute. Under a stated compute budget, the five
+full-size runs reported in Section V used 30/5, not the search's
+60/10 selection; both numbers are reported here so the near-tie between
+configurations 3$\times$ apart in cost stands as a tuning observation
+in its own right, not a discrepancy to hide. All five full runs,
+including VGG16 fine-tuning, completed at the winning batch size of 16
+with no MPS out-of-memory event, so the pre-registered batch-size
+fallback was not needed. Because Metal (MPS) kernels are not
+bitwise-deterministic, splits, vocabularies, and every selected
+hyperparameter reproduce exactly across runs, while metric values
+reproduce to roughly $\pm0.3\%$; the seed is 42 throughout, set once in
+a shared \texttt{set\_seed} utility.
+
+\subsection{Q2}
+Training minimizes masked cross-entropy (PAD positions excluded) with
+Adam, gradient-norm clipping at 1.0, and scheduled teacher forcing.
+Clipping is genuinely active early in training: 16\% of batches were
+clipped in epoch 1 (mean pre-clip norm 0.815, max 1.702), falling below
+1\% of batches by epoch 2 (mean pre-clip norm 0.693, max 1.068) ---
+evidence the vanilla RNN has a real, if modest, gradient-explosion
+tendency that clipping is actively controlling, not a ceremonial
+safeguard. Training ran 32 epochs to an early-stopping halt (configured
+budget 40/patience 5), 4,770,425 parameters, 375.3s total.
+
+\section{Results}
+
+\subsection{Q1}
+Table~\ref{tab:q1comparison} is the full cross-model test-set
+comparison. PneumoNet leads on every metric: accuracy 0.9797, macro-F1
+0.9794, macro-AUC 0.9982, against fine-tuned VGG16 (0.9765/0.9759/0.9980,
+134.3M params) and fine-tuned ResNet50 (0.9734/0.9753/0.9949, 23.5M
+params). Frozen baselines trail badly --- VGG16-frozen macro-F1
+0.9160, ResNet50-frozen 0.9407 --- confirming ImageNet features
+transfer weakly onto grayscale radiographs without adaptation.
+
+\input{tables/q1_comparison.tex}
+
+Fig.~\ref{fig:q1results} shows the normalized confusion matrix, ROC
+curves, and training curves for PneumoNet. The data-volume study
+(Fig.~\ref{fig:datavol}) trains PneumoNet on 25/50/75/100\% of the
+training data: test macro-F1 is 0.9517 (25\%, $n=1{,}277$), 0.9670
+(50\%, $n=2{,}554$), 0.9794 (75\%, $n=3{,}829$), and 0.9776 (100\%,
+$n=5{,}106$) --- performance saturates at 75\%; the final quarter of
+training data adds nothing, and the 100\% result is marginally lower,
+within run-to-run noise, not a monotonic climb.
+
+\begin{figure}[t]
+\centering
+\begin{subfigure}[b]{0.48\linewidth}
+\includegraphics[width=\linewidth]{../results/figs/q1_confusion_matrix_norm.png}
+\caption{Normalized confusion matrix}
+\end{subfigure}
+\hfill
+\begin{subfigure}[b]{0.48\linewidth}
+\includegraphics[width=\linewidth]{../results/figs/q1_roc.png}
+\caption{One-vs-rest ROC}
+\end{subfigure}
+\caption{PneumoNet test-set performance.}
+\label{fig:q1results}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\linewidth]{../results/figs/q1_datavolume.png}
+\caption{Test accuracy / macro-F1 vs. training-set fraction. Saturates at 75\%.}
+\label{fig:datavol}
+\end{figure}
+
+\subsection{Q2}
+The model reaches best validation loss 4.2207 (perplexity 68.08) and
+test BLEU \cite{papineni2002bleu} 2.450 over 844 held-out pairs. Fig.~\ref{fig:q2curves} shows
+training/validation loss falling well below the untrained baseline
+$\ln(3{,}961)\approx8.28$. Qualitatively, short-sentence hypotheses
+track the reference structurally (subject-verb-object, correct
+function words) while longer hypotheses degrade into generic,
+high-frequency Biblical phrasing disconnected from the source content
+--- e.g. for an 18-token source the model emits a fluent but
+semantically unrelated clause built from the corpus's most frequent
+n-grams, a pattern visible throughout \texttt{results/q2\_samples.csv}.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\linewidth]{../results/figs/q2_curves.png}
+\caption{Q2 training/validation loss across 32 epochs.}
+\label{fig:q2curves}
+\end{figure}
+
+\section{Error Analysis and Discussion}
+
+\subsection{Q1}
+Only 13 of 639 test images are misclassified. By true class: COVID19
+\textbf{0}, Normal 5, Pneumonia 8 --- zero errors on the rarest class
+(56 test images), evidence the inverse-frequency-weighted loss is doing
+its job rather than being swamped by the majority Pneumonia class.
+Confusion is concentrated in the Normal/Pneumonia boundary
+(Pneumonia$\to$Normal 7, Normal$\to$Pneumonia 5, Pneumonia$\to$COVID19
+1). The model is also appropriately uncertain when wrong: mean
+confidence is 0.853 on errors versus 0.989 on correct predictions, not
+confidently wrong. Fig.~\ref{fig:errors} shows the 12
+highest-confidence errors (of 13 total). These results are only honest
+because of the BatchNorm fix in Section III: pre-fix, the frozen
+baselines would have partly adapted to the domain via drifting running
+statistics, inflating their scores and narrowing the frozen-vs-fine-tuned
+gap this section reports as real. On regularization, dropout (0.3) did
+the substantive work of controlling overfitting in the winning
+configuration, while L2 was numerically inert over its searched range
+(Section IV) and L1 measurably \emph{hurt} validation macro-F1
+(0.9757 at $\lambda=0$ vs. 0.9665 at $\lambda=10^{-5}$) --- for this
+model and this amount of data, explicit weight penalties added little
+beyond what dropout and early stopping already provided.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{../results/figs/q1_errors.png}
+\caption{Twelve highest-confidence Q1 misclassifications.}
+\label{fig:errors}
+\end{figure}
+
+\subsection{Q2}
+The error taxonomy (\texttt{results/q2\_error\_taxonomy.json}) over 844
+test pairs shows UNK rate 2.46\%, repetition rate 0.36\%, empty-output
+rate 0\%, and mean length ratio (hypothesis/reference) 0.827 --- the
+model under-produces relative to the reference but rarely degenerates
+into empty or looping output. The central finding is BLEU collapsing
+by source length: 1--5 tokens $\to$ 5.79, 6--10 tokens $\to$ 8.94,
+11--15 tokens $\to$ 2.57, 16+ tokens $\to$ 1.75. Quality peaks in the
+6--10 token bucket, then falls by more than 5$\times$ once sentences
+exceed 10 tokens. This is the direct, measured signature of the
+no-attention constraint (Section III): a single fixed-size hidden
+vector can summarize a short clause but cannot carry the information
+content of a longer sentence through the whole decode, so "add
+attention" is an evidenced conclusion here, not a platitude. The Q2
+corpus's narrow, repetitive Biblical domain (Section II) partially
+offsets this constraint --- a model can lean on register-specific
+n-gram regularities instead of general compositional structure --- but
+that same narrowness means BLEU 2.45 is not comparable to published
+general-domain NMT numbers, and the model is learning to produce
+archaic Jacobean-English-to-Urdu phrasing, not general translation.
+
+\section{Conclusion and Future Work}
+
+\subsection{Q1}
+A 1.24M-parameter CNN trained from scratch, under a measured
+preprocessing and augmentation policy and a corrected BatchNorm-freezing
+implementation, outperforms fine-tuned VGG16 (108$\times$ the
+parameters) and fine-tuned ResNet50 (19$\times$ the parameters) on
+every held-out metric, with only 13 total misclassifications on the
+test set. Limitations: the dataset is single-source and only 6,383
+images after deduplication, chest radiographs across classes are
+intrinsically visually correlated (Section II), and no external or
+multi-institution validation was performed, so generalization beyond
+this dataset's imaging protocol is unverified. Future work: multi-site
+external validation, class-activation visualization (e.g. Grad-CAM) to
+check the model attends to lung fields rather than markers or
+positioning artifacts, and re-running the augmentation study with
+anatomically valid transforms (small rotations, intensity jitter)
+rather than horizontal flips.
+
+\subsection{Q2}
+The vanilla RNN encoder--decoder learns the corpus's dominant archaic
+register at short sentence lengths but its translation quality is
+bounded by the single fixed-size hidden vector it must pass from
+encoder to decoder, evidenced directly by the length-bucketed BLEU
+collapse in Section VI. Limitations: the corpus is 9,103 pairs, not the
+assignment's stated $\sim$24,000, and is domain-narrow and repetitive
+(Section II), so these results should not be read as general-purpose
+English--Urdu translation quality. The named remedy, evidenced rather
+than assumed, is architectural: adding an attention mechanism
+\cite{bahdanau2015attention} so the decoder can access all encoder
+states instead of one bottleneck vector, or replacing \texttt{nn.RNN}
+with a gated unit (LSTM/GRU) to improve long-range gradient flow, would
+directly target the failure mode this study measured. Future work also
+includes sourcing a larger, general-domain parallel corpus so results
+are comparable to the published NMT literature.
+
+\begin{thebibliography}{9}
+\bibitem{simonyan2015vgg} K. Simonyan and A. Zisserman, ``Very Deep Convolutional Networks for Large-Scale Image Recognition,'' \emph{ICLR}, 2015.
+\bibitem{he2016resnet} K. He, X. Zhang, S. Ren, and J. Sun, ``Deep Residual Learning for Image Recognition,'' \emph{CVPR}, 2016.
+\bibitem{ioffe2015batchnorm} S. Ioffe and C. Szegedy, ``Batch Normalization: Accelerating Deep Network Training by Reducing Internal Covariate Shift,'' \emph{ICML}, 2015.
+\bibitem{sutskever2014seq2seq} I. Sutskever, O. Vinyals, and Q. V. Le, ``Sequence to Sequence Learning with Neural Networks,'' \emph{NeurIPS}, 2014.
+\bibitem{bahdanau2015attention} D. Bahdanau, K. Cho, and Y. Bengio, ``Neural Machine Translation by Jointly Learning to Align and Translate,'' \emph{ICLR}, 2015.
+\bibitem{papineni2002bleu} K. Papineni, S. Roukos, T. Ward, and W.-J. Zhu, ``BLEU: a Method for Automatic Evaluation of Machine Translation,'' \emph{ACL}, 2002.
+\bibitem{loshchilov2019adamw} I. Loshchilov and F. Hutter, ``Decoupled Weight Decay Regularization,'' \emph{ICLR}, 2019.
+\end{thebibliography}
+
+\end{document}
