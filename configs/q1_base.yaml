@@ -1,0 +1,26 @@
+seed: 42
+class_names: [COVID19, NORMAL, PNEUMONIA]
+data:
+  raw_dir: data/q1
+  manifest: results/q1_manifest.csv
+  split_manifest: results/q1_split_manifest.csv
+  corr_threshold: 0.99
+  image_size: 224
+  proxy_image_size: 128
+split:
+  train: 0.8
+  val: 0.1
+  test: 0.1
+train:
+  model: pneumonet
+  batch_size: 32
+  lr: 0.0003
+  epochs: 30
+  patience: 5
+  dropout: 0.3
+  l2_lambda: 0.00001
+  l1_lambda: 0.0
+  normalization: imagenet
+  augmentation: light
+  class_weighting: weighted_loss
+  num_workers: 4

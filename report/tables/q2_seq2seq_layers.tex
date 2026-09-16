@@ -1,0 +1,19 @@
+\begin{table}[htbp]
+\centering
+\scriptsize
+\caption{Q2 vanilla RNN encoder--decoder: layer parameter shapes (src\_vocab=3656, tgt\_vocab=3961).}
+\label{tab:q2seq2seqlayers}
+\begin{tabular}{lp{3.4cm}r}
+\hline
+Layer & Parameter Shapes & Parameters \\
+\hline
+encoder.embedding & (3656, 256) & 935,936 \\
+encoder.rnn & (512, 256), (512, 512), (512,), (512,) & 394,240 \\
+decoder.embedding & (3961, 256) & 1,014,016 \\
+decoder.rnn & (512, 256), (512, 512), (512,), (512,) & 394,240 \\
+decoder.fc\_out & (3961, 512), (3961,) & 2,031,993 \\
+\hline
+Total & & 4,770,425 \\
+\hline
+\end{tabular}
+\end{table}

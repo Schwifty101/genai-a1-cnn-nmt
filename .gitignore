@@ -25,3 +25,4 @@ report/*.synctex.gz
 
 # os
 .DS_Store
+logs/

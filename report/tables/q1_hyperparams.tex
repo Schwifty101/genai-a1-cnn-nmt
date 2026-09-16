@@ -1,0 +1,21 @@
+\begin{table}[htbp]
+\centering
+\small
+\caption{Grid search: hyperparameter, range searched, and optimal value.}
+\label{tab:q1hyper}
+\begin{tabular}{lll}
+\hline
+hyperparameter & range & optimal \\
+\hline
+augmentation & heavy, light, none & none \\
+normalization & dataset, imagenet, zero\_one & imagenet \\
+batch\_size & 16, 32, 64 & 16 \\
+lr & 0.0001, 0.0003, 0.001 & 0.0001 \\
+dropout & 0.2, 0.3, 0.5 & 0.3 \\
+l2\_lambda & 0, 1e-05, 0.0001 & 0 \\
+l1\_lambda & 0, 1e-05 & 0 \\
+epochs & 30, 60 & 60 \\
+patience & 5, 10 & 10 \\
+\hline
+\end{tabular}
+\end{table}

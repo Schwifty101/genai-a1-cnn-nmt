@@ -1,0 +1,17 @@
+{
+  "model": "pneumonet",
+  "batch_size": 16,
+  "lr": 0.0001,
+  "epochs": 60,
+  "patience": 10,
+  "dropout": 0.3,
+  "l2_lambda": 0.0,
+  "l1_lambda": 0.0,
+  "normalization": "imagenet",
+  "augmentation": "none",
+  "class_weighting": "weighted_loss",
+  "image_size": 128,
+  "num_workers": 4,
+  "seed": 42,
+  "run_name": "run"
+}

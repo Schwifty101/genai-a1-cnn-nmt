@@ -1,0 +1,15 @@
+{
+  "n_errors": 13,
+  "by_true_class": {
+    "COVID19": 0,
+    "NORMAL": 5,
+    "PNEUMONIA": 8
+  },
+  "by_confusion_pair": {
+    "PNEUMONIA->NORMAL": 7,
+    "NORMAL->PNEUMONIA": 5,
+    "PNEUMONIA->COVID19": 1
+  },
+  "mean_error_confidence": 0.852740480349614,
+  "mean_correct_confidence": 0.9887682304214745
+}

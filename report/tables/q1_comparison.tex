@@ -1,0 +1,17 @@
+\begin{table*}[t]
+\centering
+\small
+\caption{Cross-model comparison on the held-out Q1 test split.}
+\label{tab:q1comparison}
+\begin{tabular}{lrrrrrr}
+\hline
+model & params (total) & params (trainable) & epoch time (s) & test acc. & test macro-F1 & test macro-AUC \\
+\hline
+pneumonet & 1239779 & 1239779 & 50.1662 & 0.9797 & 0.9794 & 0.9982 \\
+vgg16\_frozen & 134272835 & 12291 & 61.4905 & 0.9249 & 0.9160 & 0.9836 \\
+vgg16\_finetune & 134272835 & 7091715 & 72.3212 & 0.9765 & 0.9759 & 0.9980 \\
+resnet50\_frozen & 23514179 & 6147 & 34.6194 & 0.9405 & 0.9407 & 0.9925 \\
+resnet50\_finetune & 23514179 & 14970883 & 48.4463 & 0.9734 & 0.9753 & 0.9949 \\
+\hline
+\end{tabular}
+\end{table*}

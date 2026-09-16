@@ -1,0 +1,57 @@
+\begin{table}[htbp]
+\centering
+\scriptsize
+\renewcommand{\arraystretch}{0.86}
+\caption{PneumoNet architecture: layer types, output shapes and parameter counts.}
+\label{tab:pneumonet}
+\begin{tabular}{llr}
+\hline
+Layer & Output Shape & Parameters \\
+\hline
+PneumoNet & [1, 3] & 1,239,779 \\
+Sequential: 1-1 & [1, 256, 14, 14] & 1,173,216 \\
+Sequential: 2-1 & [1, 32, 112, 112] & 10,208 \\
+Conv2d: 3-1 & [1, 32, 224, 224] & 864 \\
+BatchNorm2d: 3-2 & [1, 32, 224, 224] & 64 \\
+ReLU: 3-3 & [1, 32, 224, 224] & -- \\
+Conv2d: 3-4 & [1, 32, 224, 224] & 9,216 \\
+BatchNorm2d: 3-5 & [1, 32, 224, 224] & 64 \\
+ReLU: 3-6 & [1, 32, 224, 224] & -- \\
+MaxPool2d: 3-7 & [1, 32, 112, 112] & -- \\
+Sequential: 2-2 & [1, 64, 56, 56] & 55,552 \\
+Conv2d: 3-8 & [1, 64, 112, 112] & 18,432 \\
+BatchNorm2d: 3-9 & [1, 64, 112, 112] & 128 \\
+ReLU: 3-10 & [1, 64, 112, 112] & -- \\
+Conv2d: 3-11 & [1, 64, 112, 112] & 36,864 \\
+BatchNorm2d: 3-12 & [1, 64, 112, 112] & 128 \\
+ReLU: 3-13 & [1, 64, 112, 112] & -- \\
+MaxPool2d: 3-14 & [1, 64, 56, 56] & -- \\
+Sequential: 2-3 & [1, 128, 28, 28] & 221,696 \\
+Conv2d: 3-15 & [1, 128, 56, 56] & 73,728 \\
+BatchNorm2d: 3-16 & [1, 128, 56, 56] & 256 \\
+ReLU: 3-17 & [1, 128, 56, 56] & -- \\
+Conv2d: 3-18 & [1, 128, 56, 56] & 147,456 \\
+BatchNorm2d: 3-19 & [1, 128, 56, 56] & 256 \\
+ReLU: 3-20 & [1, 128, 56, 56] & -- \\
+MaxPool2d: 3-21 & [1, 128, 28, 28] & -- \\
+Sequential: 2-4 & [1, 256, 14, 14] & 885,760 \\
+Conv2d: 3-22 & [1, 256, 28, 28] & 294,912 \\
+BatchNorm2d: 3-23 & [1, 256, 28, 28] & 512 \\
+ReLU: 3-24 & [1, 256, 28, 28] & -- \\
+Conv2d: 3-25 & [1, 256, 28, 28] & 589,824 \\
+BatchNorm2d: 3-26 & [1, 256, 28, 28] & 512 \\
+ReLU: 3-27 & [1, 256, 28, 28] & -- \\
+MaxPool2d: 3-28 & [1, 256, 14, 14] & -- \\
+AdaptiveAvgPool2d: 1-2 & [1, 256, 1, 1] & -- \\
+Sequential: 1-3 & [1, 3] & 66,563 \\
+Flatten: 2-5 & [1, 256] & -- \\
+Dropout: 2-6 & [1, 256] & -- \\
+Linear: 2-7 & [1, 256] & 65,792 \\
+ReLU: 2-8 & [1, 256] & -- \\
+Dropout: 2-9 & [1, 256] & -- \\
+Linear: 2-10 & [1, 3] & 771 \\
+\hline
+Total & & 1,239,779 \\
+\hline
+\end{tabular}
+\end{table}

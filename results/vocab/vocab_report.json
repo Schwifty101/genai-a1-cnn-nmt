@@ -1,0 +1,7 @@
+{
+  "min_freq": 2,
+  "src_vocab_size": 3656,
+  "tgt_vocab_size": 3961,
+  "val_en_oov_rate": 0.031845582414905926,
+  "val_ur_oov_rate": 0.034950613263866274
+}

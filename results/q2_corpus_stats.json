@@ -1,0 +1,17 @@
+{
+  "source_file": "data/q2/english_to_urdu_dataset.xlsx",
+  "sheet": "Sheet1",
+  "n_sentence_pairs_raw": 9103,
+  "english_word_containment_pct": {
+    "unto": 22.7,
+    "god": 13.1,
+    "shall": 11.0,
+    "jesus": 10.4,
+    "thou": 6.8,
+    "thee": 4.3,
+    "thy": 3.4
+  },
+  "total_english_word_tokens": 187640,
+  "unique_english_word_types": 6561,
+  "method": "normalize_english() from src.q2_rnn.data_prep applied to raw eng column; containment computed as fraction of sentences (word-boundary regex) containing the given word, x100, rounded to 1 decimal; token/type counts computed on the same normalized text with standalone punctuation tokens excluded."
+}

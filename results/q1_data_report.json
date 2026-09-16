@@ -1,0 +1,15 @@
+{
+  "total_found": 6432,
+  "corrupt": 0,
+  "corrupt_paths": [],
+  "exact_duplicates": 34,
+  "near_duplicates": 15,
+  "kept": 6383,
+  "class_counts": {
+    "COVID19": 560,
+    "NORMAL": 1579,
+    "PNEUMONIA": 4244
+  },
+  "seed": 42,
+  "corr_threshold": 0.99
+}
