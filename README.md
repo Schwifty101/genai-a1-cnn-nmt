@@ -30,12 +30,18 @@ The custom 1.24M-parameter CNN beats every pre-trained baseline, including fine-
 
 | Metric | Value |
 |---|---:|
-| BLEU (844 test pairs) | 2.45 |
-| Best validation loss | 4.2207 |
-| Best validation perplexity | 68.08 |
+| BLEU (844 test pairs) | 4.64 |
+| Best validation loss | 3.9772 |
+| Best validation perplexity | 53.37 |
 | Model parameters | 4,770,425 |
 
-Source: [`results/q2_metrics.json`](results/q2_metrics.json).
+Source: [`results/q2_metrics.json`](results/q2_metrics.json). This is the corrected
+configuration (teacher forcing 1.0, reversed source) after an A/B/C sweep found the
+original model under-trained, not constraint-limited: teacher forcing 0.5 with a
+forward-order source scored perplexity 68.08 / BLEU 2.45, teacher forcing 1.0 alone
+scored perplexity 57.76 / BLEU 1.56, and only combining teacher forcing 1.0 with a
+reversed source (kept) reached perplexity 53.37 / BLEU 4.64. See the report's
+Section IV for the full sweep and diagnosis.
 
 ## 4. Setup
 
@@ -161,4 +167,4 @@ uv run pytest tests/
 - The Q2 corpus is 9,103 pairs of predominantly Biblical, King-James-register English, not the ~24k general-domain corpus the assignment describes. BLEU here is not comparable to published general-domain NMT results.
 - The L2 range searched (`{0, 1e-5, 1e-4}`) is below float32 resolution at `lr=1e-4`, so L2 regularization had no measurable effect in this search. See the report's Section IV for the supplementary sweep that confirms this.
 - The grid search is staged (coordinate descent), not exhaustive — see Section 7 above.
-- Vanilla-RNN translation quality degrades sharply with sentence length (BLEU 8.94 at 6–10 source tokens, down to 1.75 at 16+ tokens), which is the expected consequence of the architecture's fixed-context-vector bottleneck.
+- Vanilla-RNN translation quality no longer collapses with sentence length once the source is reversed (BLEU is roughly flat: 4.34 at 1–5 tokens, 3.72 at 6–10, 3.32 at 11–15, 4.13 at 16+ tokens; see `results/q2_error_taxonomy.json`). The fixed-context-vector bottleneck instead shows up as a faithfulness gap: even the best configuration produces fluent, domain-appropriate Urdu that is frequently unfaithful to the source, and the model still cannot reliably reproduce training pairs it has seen 18–32 times. The corrected configuration also raised the UNK rate (2.46%→12.88%) and repetition rate (0.36%→3.79%) even as BLEU nearly doubled — the fix is a net gain, not a uniform one.

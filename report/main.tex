@@ -32,16 +32,21 @@ PneumoNet outperforms all four pre-trained baselines on every test metric
 (accuracy 0.9797, macro-F1 0.9794, macro-AUC 0.9982), including
 fine-tuned VGG16 at 108$\times$ the parameter count. In Q2, a vanilla
 RNN encoder--decoder (no attention, no gating) is trained on an
-English--Urdu sentence-pair corpus for neural machine translation,
-achieving BLEU 2.45, with quality collapsing sharply as source-sentence
-length grows. Both studies surface measurement-driven findings that
-contradict default assumptions in the respective pipelines: a
-duplicate-detection threshold imported from natural-image practice
-fails on chest radiographs, horizontal flipping corrupts a laterality
-marker, frozen backbones silently adapt through BatchNorm statistics,
-an L2 regularization sweep is numerically inert at float32 precision,
-and the Q2 corpus is a ninth of the assignment's stated size and
-overwhelmingly Biblical in register.
+English--Urdu sentence-pair corpus for neural machine translation; the
+originally reported result was diagnosed as under-trained rather than
+constraint-limited, and correcting the teacher-forcing schedule
+together with reversing the source sequence raises test BLEU from 2.45
+to 4.64, though the corrected model remains fluent but largely
+unfaithful to its source. Both studies surface measurement-driven
+findings that contradict default assumptions in the respective
+pipelines: a duplicate-detection threshold imported from natural-image
+practice fails on chest radiographs, horizontal flipping corrupts a
+laterality marker, frozen backbones silently adapt through BatchNorm
+statistics, an L2 regularization sweep is numerically inert at float32
+precision, a Q2 quality ceiling initially attributed to the
+no-attention architecture was actually an under-trained
+teacher-forcing configuration, and the Q2 corpus is a ninth of the
+assignment's stated size and overwhelmingly Biblical in register.
 \end{abstract}
 
 \section{Introduction}
@@ -64,13 +69,19 @@ showing the small model wins (Section V).
 \subsection{Q2: English--Urdu Neural Machine Translation}
 A vanilla RNN encoder--decoder is the base case against which attention
 and gating are usually justified, but that justification is rarely
-measured directly. This study trains an \texttt{nn.RNN}-only
-encoder--decoder (no LSTM, GRU, attention, or Transformer component) on
-an English--Urdu parallel corpus and evaluates it with BLEU,
-length-bucketed BLEU, and an error taxonomy. Contributions: an audit of
-the actual corpus against the assignment's description (Section II),
-and length-bucketed evidence that a single fixed-size hidden vector,
-not implementation quality, bounds translation quality (Section VI).
+measured directly, and rarely disentangled from ordinary training
+bugs. This study trains an \texttt{nn.RNN}-only encoder--decoder (no
+LSTM, GRU, attention, or Transformer component) on an English--Urdu
+parallel corpus and evaluates it with BLEU, length-bucketed BLEU, and
+an error taxonomy. Contributions: an audit of the actual corpus against
+the assignment's description (Section II); a three-configuration sweep
+that diagnoses the originally reported quality ceiling as
+under-training (a static 0.5 teacher-forcing rate and forward-order
+source) rather than architecture, and corrects it, nearly doubling test
+BLEU (Section IV); and evidence that, even after correction,
+translation quality remains bounded not by sentence length but by the
+single fixed-size hidden vector's ability to condition generation
+faithfully on the source (Section VI).
 
 \section{Dataset and Preprocessing}
 
@@ -240,14 +251,40 @@ a shared \texttt{set\_seed} utility.
 
 \subsection{Q2}
 Training minimizes masked cross-entropy (PAD positions excluded) with
-Adam, gradient-norm clipping at 1.0, and scheduled teacher forcing.
-Clipping is genuinely active early in training: 16\% of batches were
-clipped in epoch 1 (mean pre-clip norm 0.815, max 1.702), falling below
-1\% of batches by epoch 2 (mean pre-clip norm 0.693, max 1.068) ---
-evidence the vanilla RNN has a real, if modest, gradient-explosion
-tendency that clipping is actively controlling, not a ceremonial
-safeguard. Training ran 32 epochs to an early-stopping halt (configured
-budget 40/patience 5), 4,770,425 parameters, 375.3s total.
+Adam and gradient-norm clipping at 1.0. Clipping is genuinely active
+early in training: 16\% of batches were clipped in epoch 1 (mean
+pre-clip norm 0.815, max 1.702), falling below 1\% of batches by epoch
+2 (mean pre-clip norm 0.693, max 1.068) --- evidence the vanilla RNN
+has a real, if modest, gradient-explosion tendency that clipping is
+actively controlling, not a ceremonial safeguard.
+
+The originally reported model (test BLEU 2.45) was diagnosed as
+\emph{under-trained}, not constraint-limited: it could not reproduce
+training pairs it had already seen 32 times, and \texttt{train\_loss}
+(4.297) exceeded \texttt{val\_loss} (4.244) --- a positive gap
+characteristic of underfitting, not the capacity ceiling a hidden-vector
+bottleneck would produce. Two configuration causes, not architectural
+ones, were identified and fixed. First, \texttt{teacher\_forcing} was
+fixed at 0.5 from epoch 1, so the decoder consumed its own untrained
+predictions half the time and never received a clean training signal.
+Second, the source sequence was fed in forward order; reversing it
+\cite{sutskever2014seq2seq} shortens the dependency between the first
+source and first target words, the standard remedy for an
+attention-free RNN encoder--decoder. Table~\ref{tab:q2tuning} reports
+all three measured configurations. Correcting teacher forcing alone
+\emph{lowered} test BLEU (2.45$\to$1.56) even though it improved
+validation perplexity (68.08$\to$57.76); only combined with source
+reversal did BLEU nearly double, to 4.64, with perplexity falling
+further to 53.37 --- perplexity and BLEU did not move together across
+this sweep, worth noting honestly rather than smoothing into a single
+trend line. \texttt{reverse\_source} changes token order only: it adds
+no LSTM, GRU, attention, or Transformer component, so the vanilla-RNN
+constraint stated in Section III still holds for the reported (final)
+configuration. Under that corrected configuration, training ran 18
+epochs to an early-stopping halt (configured budget 80/patience 8),
+4,770,425 parameters, 210.3s total.
+
+\input{tables/q2_tuning.tex}
 
 \section{Results}
 
@@ -294,23 +331,40 @@ within run-to-run noise, not a monotonic climb.
 \end{figure}
 
 \subsection{Q2}
-The model reaches best validation loss 4.2207 (perplexity 68.08) and
-test BLEU \cite{papineni2002bleu} 2.450 over 844 held-out pairs. Fig.~\ref{fig:q2curves} shows
-training/validation loss falling well below the untrained baseline
-$\ln(3{,}961)\approx8.28$. Qualitatively, short-sentence hypotheses
-track the reference structurally (subject-verb-object, correct
-function words) while longer hypotheses degrade into generic,
-high-frequency Biblical phrasing disconnected from the source content
---- e.g. for an 18-token source the model emits a fluent but
-semantically unrelated clause built from the corpus's most frequent
-n-grams, a pattern visible throughout \texttt{results/q2\_samples.csv}.
+The final configuration (teacher forcing 1.0, reversed source) reaches
+best validation loss 3.9772 (perplexity 53.37) and test BLEU
+\cite{papineni2002bleu} 4.64 over 844 held-out pairs --- an A/B/C
+tuning result rather than a single run (Table~\ref{tab:q2tuning},
+Section IV). Fig.~\ref{fig:q2curves} shows training/validation loss for
+the final configuration, across its 18 epochs, falling well below the
+untrained baseline $\ln(3{,}961)\approx8.28$.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.85\linewidth]{../results/figs/q2_curves.png}
-\caption{Q2 training/validation loss across 32 epochs.}
+\caption{Q2 training/validation loss, final configuration, 18 epochs.}
 \label{fig:q2curves}
 \end{figure}
+
+Length-bucketed test BLEU (Table~\ref{tab:q2lengthbucket}, fresh
+samples in \texttt{results/q2\_samples.csv}) is close to flat across
+source lengths, unlike the earlier configurations. Qualitatively, the
+model produces fluent, register-appropriate Urdu at both short and long
+source lengths, but that fluency does not imply faithfulness. For the
+10-token source ``blessed are the meek for they shall inherit the
+earth,'' the reference reads (glossed) ``blessed are those who are
+meek, for they will inherit the earth,'' but the hypothesis glosses to
+``blessed are those who are near to God'' --- correct Beatitude
+register, wrong predicate. For the 30-token source ``and now also the
+axe is laid unto the root of the trees therefore every tree which
+bringeth not forth good fruit is hewn down and cast into the fire,''
+the hypothesis glosses to ``and now I say to you, because of the
+grapes, woe unto you, that none of you should [UNK]'' --- fluent,
+generic Biblical Urdu with no relationship to the source's axe, tree,
+or fire imagery. Both patterns recur throughout
+\texttt{results/q2\_samples.csv}.
+
+\input{tables/q2_lengthbucket.tex}
 
 \section{Error Analysis and Discussion}
 
@@ -345,24 +399,48 @@ beyond what dropout and early stopping already provided.
 
 \subsection{Q2}
 The error taxonomy (\texttt{results/q2\_error\_taxonomy.json}) over 844
-test pairs shows UNK rate 2.46\%, repetition rate 0.36\%, empty-output
-rate 0\%, and mean length ratio (hypothesis/reference) 0.827 --- the
-model under-produces relative to the reference but rarely degenerates
-into empty or looping output. The central finding is BLEU collapsing
-by source length: 1--5 tokens $\to$ 5.79, 6--10 tokens $\to$ 8.94,
-11--15 tokens $\to$ 2.57, 16+ tokens $\to$ 1.75. Quality peaks in the
-6--10 token bucket, then falls by more than 5$\times$ once sentences
-exceed 10 tokens. This is the direct, measured signature of the
-no-attention constraint (Section III): a single fixed-size hidden
-vector can summarize a short clause but cannot carry the information
-content of a longer sentence through the whole decode, so "add
-attention" is an evidenced conclusion here, not a platitude. The Q2
-corpus's narrow, repetitive Biblical domain (Section II) partially
-offsets this constraint --- a model can lean on register-specific
-n-gram regularities instead of general compositional structure --- but
-that same narrowness means BLEU 2.45 is not comparable to published
-general-domain NMT numbers, and the model is learning to produce
-archaic Jacobean-English-to-Urdu phrasing, not general translation.
+test pairs, final configuration, shows UNK rate 12.88\%, repetition
+rate 3.79\%, empty-output rate 0\%, and mean length ratio
+(hypothesis/reference) 1.0544 --- the model now over-produces slightly
+relative to the reference and still rarely degenerates into empty
+output. Both the UNK rate and the repetition rate rose sharply from the
+original, under-trained run (2.46\%$\to$12.88\% and
+0.36\%$\to$3.79\% respectively) even as test BLEU nearly doubled
+(Section IV): correcting under-training was not a uniform improvement
+across metrics, and a configuration that wins on corpus-level n-gram
+overlap can measurably lose on token-level degeneracy.
+
+Length-bucketed BLEU is close to flat: 1--5 tokens 4.343, 6--10 tokens
+3.721, 11--15 tokens 3.315, 16+ tokens 4.125
+(Table~\ref{tab:q2lengthbucket}). This flattening is not a surprise but
+a confirmation: source reversal shortens the dependency between early
+source tokens and early target tokens (Section IV), so it should help
+most exactly where the fixed-size hidden vector previously had the
+furthest information to carry, i.e. the longer buckets --- which is
+what the earlier length-degradation pattern reflected and reversal has
+now removed.
+
+A flat length curve does not mean the fixed-size-hidden-vector
+limitation is gone; the evidence for it is now different, and stronger.
+First, faithfulness: even the best configuration produces fluent,
+domain-appropriate Urdu that is frequently unfaithful to the specific
+source content rather than merely awkward (Section V examples) ---
+consistent register, but wrong or absent propositional content.
+Second, memorization: the model still cannot reliably reproduce
+training pairs it has already seen repeatedly during training (32
+times in the original diagnostic run, 18 times in the final
+configuration), which is not a length or vocabulary-coverage problem
+since these exact pairs have already been encountered many times over;
+it is a sign that a single fixed-size hidden vector is not conditioning
+generation strongly enough on the specific input, which is exactly the
+bottleneck attention was introduced to remove
+\cite{bahdanau2015attention}. The Q2 corpus's narrow, repetitive
+Biblical domain (Section II) is precisely why this is visible: it lets
+the model fall back on register-specific n-gram regularities that
+sound right and score reasonably even when the content is wrong, so
+fluency and raw BLEU understate the faithfulness gap, and neither BLEU
+4.64 nor the flat length curve should be read as evidence the
+bottleneck has been resolved.
 
 \section{Conclusion and Future Work}
 
@@ -384,21 +462,29 @@ anatomically valid transforms (small rotations, intensity jitter)
 rather than horizontal flips.
 
 \subsection{Q2}
-The vanilla RNN encoder--decoder learns the corpus's dominant archaic
-register at short sentence lengths but its translation quality is
-bounded by the single fixed-size hidden vector it must pass from
-encoder to decoder, evidenced directly by the length-bucketed BLEU
-collapse in Section VI. Limitations: the corpus is 9,103 pairs, not the
-assignment's stated $\sim$24,000, and is domain-narrow and repetitive
-(Section II), so these results should not be read as general-purpose
-English--Urdu translation quality. The named remedy, evidenced rather
-than assumed, is architectural: adding an attention mechanism
-\cite{bahdanau2015attention} so the decoder can access all encoder
-states instead of one bottleneck vector, or replacing \texttt{nn.RNN}
-with a gated unit (LSTM/GRU) to improve long-range gradient flow, would
-directly target the failure mode this study measured. Future work also
-includes sourcing a larger, general-domain parallel corpus so results
-are comparable to the published NMT literature.
+Once an under-trained teacher-forcing schedule and a forward-only
+source order were diagnosed and corrected (test BLEU 2.45$\to$4.64;
+Section IV), the vanilla RNN encoder--decoder still shows the
+limitation this study set out to measure, just via different evidence
+than originally reported: even its best configuration produces fluent,
+domain-appropriate Urdu that is frequently unfaithful to the source and
+still cannot reliably reproduce training pairs it has seen repeatedly,
+indicating the single fixed-size hidden vector it must pass from
+encoder to decoder under-conditions generation on the specific input
+(Section VI) rather than merely truncating long sentences. Limitations:
+the corpus is 9,103 pairs, not the assignment's stated $\sim$24,000,
+and is domain-narrow and repetitive (Section II), so these results
+should not be read as general-purpose English--Urdu translation
+quality; the corrected configuration also raised the UNK and repetition
+rates even as BLEU improved, so the fix is a net gain, not a uniform
+one. The named remedy, evidenced rather than assumed, is architectural:
+adding an attention mechanism \cite{bahdanau2015attention} so the
+decoder can access all encoder states instead of one bottleneck vector,
+or replacing \texttt{nn.RNN} with a gated unit (LSTM/GRU) to improve
+long-range gradient flow, would directly target the faithfulness gap
+this study measured. Future work also includes sourcing a larger,
+general-domain parallel corpus so results are comparable to the
+published NMT literature.
 
 \begin{thebibliography}{9}
 \bibitem{simonyan2015vgg} K. Simonyan and A. Zisserman, ``Very Deep Convolutional Networks for Large-Scale Image Recognition,'' \emph{ICLR}, 2015.

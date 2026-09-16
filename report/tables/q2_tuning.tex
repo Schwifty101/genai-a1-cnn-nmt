@@ -1,0 +1,15 @@
+\begin{table}[htbp]
+\centering
+\scriptsize
+\caption{Q2 tuning sweep: teacher forcing and source order (val. perplexity, test BLEU).}
+\label{tab:q2tuning}
+\begin{tabular}{lrr}
+\hline
+Configuration & Val. Perplexity & Test BLEU \\
+\hline
+TF=0.5, forward source (orig.) & 68.08 & 2.45 \\
+TF=1.0, forward source & 57.76 & 1.56 \\
+\textbf{TF=1.0, reversed source (final)} & \textbf{53.37} & \textbf{4.64} \\
+\hline
+\end{tabular}
+\end{table}
